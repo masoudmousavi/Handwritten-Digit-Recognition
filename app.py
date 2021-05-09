@@ -26,7 +26,6 @@ class NeuralNetwork(object):
         self.weights = self._create_random_weights()
         self.activations = self._initialize_activations()
 
-
     @property
     def input_units_num(self):
         return self.architecture[0]
@@ -63,21 +62,35 @@ class NeuralNetwork(object):
         return np.array(list(np.ravel(weights[0])) + list(np.ravel(weights[1])))
 
 
+    def matricize(self, vector):
+
+        vector = list(vector)
+        _s0 = self.weights[0].shape
+        _s1 = self.weights[1].shape
+        _w0 = vector[:np.ravel(self.weights[0]).shape[0]]
+        _w1 = vector[np.ravel(self.weights[0]).shape[0]:]
+        return [np.reshape(_w0, _s0), np.reshape(_w1, _s1)]
+
+
     def _initialize_activations(self):
         activations = [
-            np.ones(self.architecture[0] + 1),
-            np.ones(self.architecture[1] + 1),
-            np.ones(self.architecture[2])
+            None,
+            None,
+            None
         ]
         return activations
 
 
-    def activate_input_units(self, training_example):
-        for i in range(1, self.input_units_num + 1):
-            self.activations[0][i] = self.X[training_example][i-1]
+    def _activate_input_units(self, training_example):
+        self.activations[0] = np.array([1] + list(self.X[training_example]))
+        # for i in range(1, self.input_units_num + 1):
+        #     self.activations[0][i] = 2
 
 
-    def forward_prop(self):
+    def forward_prop(self, training_example):
+        self._activate_input_units(training_example)
+        # self.activations[0][0] = 1
+        # self.activations[0][1:] = self.X[training_example]
         for l in range(1, self.layers_num):
             z = np.matmul(self.weights[l-1], self.activations[l-1])
             # if not l == self.layers_num - 1:
@@ -89,19 +102,20 @@ class NeuralNetwork(object):
     def _activate(self, layer, z):
         # sigmoid = lambda x: 1 / (1 + exp(-x))
         # k = 1
-        sigmoid = lambda x: 1 / (1 + np.exp(-x))
-        vfunc = np.vectorize(sigmoid)
-        if not layer == self.layers_num - 1:
-            self.activations[layer][0] = 1
-            self.activations[layer][1:] = vfunc(z)
         # else:
         #     k = 0
         # for i in range(k, self.architecture[layer]+k):
         #     # if i == self.classes_num and layer == self.layers_num - 1:
         #     #     return
         #     self.activations[layer][i] = sigmoid(z[i-1])
+        sigmoid = lambda x: 1 / (1 + np.exp(-x))
+        vfunc = np.vectorize(sigmoid)
+        if layer < self.layers_num - 1:
+
+            self.activations[layer] = np.array([1] + list(vfunc(z)))
+
         else:
-            self.activations[layer] = vfunc(z)
+            self.activations[layer] = np.roll(vfunc(z), 1)
 
 
     #might have a proplem in the mult methods
@@ -118,28 +132,30 @@ class NeuralNetwork(object):
 
 
     def cost_function(self, weights):
-        self.forward_prop()
-        weights = list(weights)
-        _s0 = self.weights[0].shape
-        _s1 = self.weights[1].shape
-        _w0 = weights[:np.ravel(self.weights[0]).shape[0]]
-        _w1 = weights[np.ravel(self.weights[0]).shape[0]:]
-        _weights = [np.reshape(_w0, _s0), np.reshape(_w1, _s1)]
+        _weights = self.matricize(weights)
         sum_term = 0.0
-        for i in range(self.training_set_size):
-            for k in range(self.classes_num):
-                positive_term = self.y[i][k] * np.log(self.activations[-1][k])
-                negative_term = (1 - self.y[i][k]) * np.log(1 - self.activations[-1][k])
-                sum_term += (positive_term + negative_term)
+        for t in range(self.training_set_size):
+            self.forward_prop(t)
+            vfunc = np.vectorize(np.log)
+            positive_term = np.dot(
+                self.y[t],
+                vfunc(self.activations[-1])
+            )
+            negative_term = np.dot(
+                (1 - self.y[t]),
+                vfunc(1 - self.activations[-1])
+            )
+            sum_term += (-positive_term - negative_term)
 
         regularization_sum = 0.0
-        for l in range(self.layers_num - 1):
-            for i in range(self.architecture[l+1]):
-                for j in range(self.architecture[l] + 1):
-                    regularization_sum += _weights[l][i][j] ** 2
-        # print(f'Iteration {self._iterations}\'s cost: {-(1 / self.training_set_size) * sum_term + (self.regularization_param / (2*self.training_set_size)) * regularization_sum}')
-
-        return -(1 / self.training_set_size) * sum_term + (self.regularization_param / (2*self.training_set_size)) * regularization_sum
+        for l in range(2):
+            regularization_sum += np.dot(
+                self.unroll_matrix(_weights[l]),
+                self.unroll_matrix(_weights[l])
+            )
+        cost = (1 / self.training_set_size) * sum_term + (self.regularization_param / (2*self.training_set_size)) * regularization_sum
+        print(f'Iteration {self._iterations + 1}\'s cost: {cost}')
+        return cost
 
 
     def backprop(self, weights):
@@ -154,9 +170,10 @@ class NeuralNetwork(object):
         delta_accumulators = [np.copy(_weights[0]), np.copy(_weights[1])]
         for t in range(self.training_set_size):
             if(t % 500 == 0):
-                print(f"Iteration {self._iterations}, Training example {t+1}")
-            self.activate_input_units(t)
-            self.forward_prop()
+                # print(f"Iteration {self._iterations}, Training example {t+1}")
+                pass
+            # self.activate_input_units(t)
+            self.forward_prop(t)
             errors = self.compute_errors(t)
             # for l in range(2):
             #     delta_accumulators[l] += np.matmul([errors[l]], [self.activations[l]] )
@@ -261,8 +278,42 @@ class NeuralNetwork(object):
         return self.activations[-1]
 
 
-ANN = NeuralNetwork('ex4data1.mat', [400, 25, 10], 1.2)
+    def gradient_decent(self):
+        # temp_weights = [np.copy(self.weights[0]), np.copy(self.weights[1])]
+        alpha = 500
+        constant = 0.5
+        for _ in range(1000):
+            gradients = self.backprop(self.unroll_matrix(self.weights))
+            for layer in range(2):
+                self.weights[layer] -= constant * gradients[layer]
+                # self.weights[layer] = temp_weights[layer]
+            print(
+                f'Iteration {self._iterations}\'s cost: {self.cost_function(self.unroll_matrix(self.weights))}')
 
+            print('===================')
+
+
+ANN = NeuralNetwork('ex4data1.mat', [400, 25, 10], 0.0)
+
+
+
+
+
+# indx = 2354
+
+dict = sio.loadmat('ex4weights.mat')
+ANN.weights = [dict['Theta1'], dict['Theta2']]
+# # ANN.activate_input_units(indx)
+# # ANN.forward_prop()
+print(ANN.cost_function(ANN.unroll_matrix(ANN.weights)))
+# print(np.argmax(ANN.activations[-1]))
+# plt.imshow(
+#     np.reshape(
+#         ANN.X[indx],
+#         (20, 20)
+#     ).T
+# )
+# plt.show()
 
 # print(w)
 # with open("weights.txt", "w") as fp:
@@ -270,10 +321,20 @@ ANN = NeuralNetwork('ex4data1.mat', [400, 25, 10], 1.2)
 #         'weights0': list(w)
 #     }, fp)
 
-
+# indx = 4567
+# print(ANN.y[indx])
+# print(ANN.classes[indx])
+# plt.imshow(
+#     np.reshape(
+#         ANN.X[indx],
+#         (20, 20)
+#     ).T
+# )
+# plt.show()
 
 print(ANN.optimize_params())
 
+# print(ANN.optimize_params())
 # for i in range(ANN.training_set_size):
 #     plt.figure()
 #     index = random.randint(0, ANN.training_set_size)
