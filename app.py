@@ -52,7 +52,7 @@ class NeuralNetwork(object):
 
 
     def _create_random_weights(self):
-        EPSILON = 0.4
+        EPSILON = 0.12
         weights_1 = np.random.rand(self.hidden_units_num, self.input_units_num+1) * (2 * EPSILON) - EPSILON
         weights_2 = np.random.rand(self.classes_num, self.hidden_units_num+1) * (2 * EPSILON) - EPSILON
         return [weights_1, weights_2]
@@ -89,13 +89,8 @@ class NeuralNetwork(object):
 
     def forward_prop(self, training_example):
         self._activate_input_units(training_example)
-        # self.activations[0][0] = 1
-        # self.activations[0][1:] = self.X[training_example]
         for l in range(1, self.layers_num):
             z = np.matmul(self.weights[l-1], self.activations[l-1])
-            # if not l == self.layers_num - 1:
-            #     _z = list(z)
-            #     z = np.array([1.] + _z)
             self._activate(l, z)
 
 
@@ -116,19 +111,6 @@ class NeuralNetwork(object):
 
         else:
             self.activations[layer] = np.roll(vfunc(z), 1)
-
-
-    #might have a proplem in the mult methods
-    def compute_errors(self, training_example):
-        output_layer_errors = self.activations[-1] - self.y[training_example]
-        hidden_layer_errors = np.multiply(
-            np.matmul(self.weights[1].T, output_layer_errors),
-            np.multiply(self.activations[1], (1 - self.activations[1]))
-        )
-        _hle = list(hidden_layer_errors)
-        _hle.pop(0)
-        hidden_layer_errors = np.array(_hle)
-        return [hidden_layer_errors, output_layer_errors]
 
 
     def cost_function(self, weights):
@@ -154,53 +136,47 @@ class NeuralNetwork(object):
                 self.unroll_matrix(_weights[l])
             )
         cost = (1 / self.training_set_size) * sum_term + (self.regularization_param / (2*self.training_set_size)) * regularization_sum
-        print(f'Iteration {self._iterations + 1}\'s cost: {cost}')
+        # print(f'Iteration {self._iterations + 1}\'s cost: {cost}')
         return cost
+
+
+    def sigmoid_gradient(self, matrix):
+        sigmoid = lambda z: 1 / (1 + np.exp(-z))
+        sigmoid_grad = lambda z: sigmoid(z) * (1 - sigmoid(z))
+        vfunc = np.vectorize(sigmoid_grad)
+        return vfunc(matrix)
+
+
+    def compute_errors(self, training_example):
+        output_layer_errors = self.activations[-1] - self.y[training_example]
+        z = np.matmul(self.weights[0], self.activations[0])
+        hidden_layer_errors = np.multiply(
+            np.matmul(self.weights[1].T, output_layer_errors),
+            self.sigmoid_gradient(np.array([1] + list(z)))
+        )
+        hidden_layer_errors = np.array(list(hidden_layer_errors)[1:])
+        return [hidden_layer_errors, output_layer_errors]
 
 
     def backprop(self, weights):
         self._iterations += 1
-        weights = list(weights)
-        _s0 = self.weights[0].shape
-        _s1 = self.weights[1].shape
-        _w0 = weights[:np.ravel(self.weights[0]).shape[0]]
-        _w1 = weights[np.ravel(self.weights[0]).shape[0]:]
-        _weights = [np.reshape(_w0, _s0), np.reshape(_w1, _s1)]
+        _weights = self.matricize(weights)
         gradients = [np.copy(_weights[0]), np.copy(_weights[1])]
         delta_accumulators = [np.copy(_weights[0]), np.copy(_weights[1])]
+
+        #algorithm
         for t in range(self.training_set_size):
-            if(t % 500 == 0):
-                # print(f"Iteration {self._iterations}, Training example {t+1}")
-                pass
-            # self.activate_input_units(t)
             self.forward_prop(t)
             errors = self.compute_errors(t)
-            # for l in range(2):
-            #     delta_accumulators[l] += np.matmul([errors[l]], [self.activations[l]] )
-
             for layer in range(2):
                 delta_accumulators[layer] += np.matmul(
                     errors[layer].reshape(1, errors[layer].shape[0]).T,
                     self.activations[layer].reshape((1, self.activations[layer].shape[0]))
                 )
-
-            # for l in range(len(delta_accumulators)):
-            #     for i in range(delta_accumulators[l].shape[0]):
-            #         for j in range(delta_accumulators[l].shape[1]):
-            #             delta_accumulators[l][i][j] += self.activations[l][j] * errors[l][i]
         for layer in range(2):
             gradients[layer] = (1 / self.training_set_size) * delta_accumulators[layer] + (
                     self.regularization_param / self.training_set_size) * _weights[layer]
 
-        # for l in range(len(delta_accumulators)):
-        #     for i in range(delta_accumulators[l].shape[0]):
-        #         for j in range(delta_accumulators[l].shape[1]):
-        #             if j == 0:
-        #                 gradients[l][i][j] = (1 / self.training_set_size) * delta_accumulators[l][i][j]
-        #             else:
-        #                 gradients[l][i][j] = (1 / self.training_set_size) * delta_accumulators[l][i][j] + (self.regularization_param / self.training_set_size) * _weights[l][i][j]
-
-        # return gradients
         return np.array(list(np.ravel(gradients[0])) + list(np.ravel(gradients[1])))
 
 
@@ -233,29 +209,9 @@ class NeuralNetwork(object):
             }, fp)
         return res.x
 
-        # temp_weights = [np.copy(self.weights[0]), np.copy(self.weights[1])]
-        # cost1 = self.cost_function(self.weights)
-        # for _ in range(4000):
-        #     gradients = self.backprop(self.weights, iter=_)
-        #     for l in range(len(self.weights)):
-        #         for i in range(self.weights[l].shape[0]):
-        #             for j in range(self.weights[l].shape[1]):
-        #                 self.weights[l][i][j] -= self.learning_rate * (1/self.training_set_size) * gradients[l][i][j]
-        #     # self.learning_rate *= 0.9
-        #     cost2 = self.cost_function(self.weights)
-        #     print(f"Iteration {_+1} completed, {cost1 - cost2} decreased from the cost function, cost function is {cost2}")
-        #     cost1 = cost2
-        # return self.weights
-
 
     def find_class(self, training_example):
         return self.y[training_example]
-        # for i in range(self.classes_num):
-        #     # if(self.y[training_example][i]):
-        #     # #     if i == 0:
-        #     # #         return self.classes_num
-        #     # #     return i
-        #     #     return i
 
 
     def predict(self, features):
@@ -279,11 +235,10 @@ class NeuralNetwork(object):
 
 
     def gradient_decent(self):
-        # temp_weights = [np.copy(self.weights[0]), np.copy(self.weights[1])]
         alpha = 500
-        constant = 0.5
+        constant = 0.01
         for _ in range(1000):
-            gradients = self.backprop(self.unroll_matrix(self.weights))
+            gradients = self.matricize(self.backprop(self.unroll_matrix(self.weights)))
             for layer in range(2):
                 self.weights[layer] -= constant * gradients[layer]
                 # self.weights[layer] = temp_weights[layer]
@@ -293,19 +248,19 @@ class NeuralNetwork(object):
             print('===================')
 
 
-ANN = NeuralNetwork('ex4data1.mat', [400, 25, 10], 0.0)
+ANN = NeuralNetwork('ex4data1.mat', [400, 25, 10], 1)
 
 
-
+# print(ANN.sigmoid_gradient(np.zeros(4)))
 
 
 # indx = 2354
 
-dict = sio.loadmat('ex4weights.mat')
-ANN.weights = [dict['Theta1'], dict['Theta2']]
-# # ANN.activate_input_units(indx)
-# # ANN.forward_prop()
-print(ANN.cost_function(ANN.unroll_matrix(ANN.weights)))
+# dict = sio.loadmat('ex4weights.mat')
+# ANN.weights = [dict['Theta1'], dict['Theta2']]
+# # # ANN.activate_input_units(indx)
+# # # ANN.forward_prop()
+# print(ANN.cost_function(ANN.unroll_matrix(ANN.weights)))
 # print(np.argmax(ANN.activations[-1]))
 # plt.imshow(
 #     np.reshape(
@@ -332,7 +287,9 @@ print(ANN.cost_function(ANN.unroll_matrix(ANN.weights)))
 # )
 # plt.show()
 
-print(ANN.optimize_params())
+# print(ANN.optimize_params())
+print(ANN.gradient_decent())
+
 
 # print(ANN.optimize_params())
 # for i in range(ANN.training_set_size):
