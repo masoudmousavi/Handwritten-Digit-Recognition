@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.io as sio
+import matplotlib.pyplot as plt
 
 
 class StandardNeuralNetwoek(object):
@@ -10,8 +11,9 @@ class StandardNeuralNetwoek(object):
         self.learning_rate = 50
         self._iterations = 0
         self.regularization_param = regularization_param
-        self.X, self.Y, self.classes = self._extract_input_data(self.path_to_training_data_set)
+        self.X, self.Y, self.X_test, self.Y_test, self.train_classes, self.test_classes = self._extract_input_data(self.path_to_training_data_set)
         self.training_set_size = self.X.shape[1]
+        self.test_set_size = self.X_test.shape[1]
         self.weights, self.bias = self._create_random_weights()
         # self.bias = self._create_random_bias()
         self.activations = self._initialize_activations()
@@ -42,8 +44,17 @@ class StandardNeuralNetwoek(object):
         self.mean = np.mean(X)
         self.sigma = np.std(X)
         X = (X - self.mean) / self.sigma
-        # np.random.shuffle(X)
-        return X, ret_Y.T, labeled_Y
+        shuffler = np.random.permutation(X.shape[1])
+        X = X[:, shuffler]
+        ret_Y = ret_Y.T[:, shuffler]
+        labeled_Y = labeled_Y.T[:, shuffler]
+        X_train = X[:, :4500]
+        X_test = X[:, 4500:]
+        Y_train = ret_Y[:, :4500]
+        Y_test = ret_Y[:, 4500:]
+        train_classes = labeled_Y[:, :4500]
+        test_classes = labeled_Y[:, 4500:]
+        return X_train, Y_train, X_test, Y_test, train_classes, test_classes
 
 
     def _create_random_weights(self):
@@ -94,8 +105,8 @@ class StandardNeuralNetwoek(object):
         cost = -o_cost / self.training_set_size
         if self._iterations % 10 == 0:
             print(f'Epoch {self._iterations + 1}, Cost {cost}')
-            # self.eval_on_test_set()
-            # self.eval_on_training_set()
+            self.eval_on_test_set()
+            self.eval_on_training_set()
             print('================================')
         return -o_cost / self.training_set_size
 
@@ -117,7 +128,7 @@ class StandardNeuralNetwoek(object):
         SdW = [np.ones(self.weights[layer].shape) for layer in range(2)]
         Vdb = [np.ones(self.bias[layer].shape) for layer in range(2)]
         Sdb = [np.ones(self.bias[layer].shape) for layer in range(2)]
-        alpha = 0.005
+        alpha = 0.3
         beta1 = 0.9
         beta2 = 0.99
         epsilon = 0.00000001
@@ -142,11 +153,58 @@ class StandardNeuralNetwoek(object):
 
             cost = self.cost_function()
 
-            if epoch % 100 == 0:
-                print(f'Epoch {epoch + 1}, Cost {cost}')
-                # self.eval_on_test_set()
-                # self.eval_on_training_set()
-                print('================================')
+            if epoch % 75 == 0 and epoch > 600:
+                fig = plt.figure(figsize=(10, 7))
+
+
+                for _ in range(25):
+                    fig.add_subplot(5, 5, _ + 1)
+
+                    index = np.random.randint(1, 4400)
+                    Z1 = np.matmul(self.weights[0], self.X[:, index].reshape(400, 1)) + self.bias[0]
+                    self.activations[1] = np.tanh(Z1)
+                    Z2 = np.matmul(self.weights[1], self.activations[1]) + self.bias[1]
+                    sigmoid = np.vectorize(lambda z: 1 / (1 + np.exp(-z)))
+                    self.activations[2] = sigmoid(Z2)
+                    plt.imshow(self.X[:, index].reshape((20, 20)).T, cmap='gray')
+                    plt.axis('off')
+                    plt.title(f'Model detected {np.argmax(self.activations[-1])} mf')
+                plt.show()
+
+
+    def eval_on_test_set(self):
+        self.activations[0] = self.X_test
+        Z1 = np.matmul(self.weights[0], self.activations[0]) + self.bias[0]
+        self.activations[1] = np.tanh(Z1)
+        Z2 = np.matmul(self.weights[1], self.activations[1]) + self.bias[1]
+        sigmoid = np.vectorize(lambda z: 1 / (1 + np.exp(-z)))
+        self.activations[2] = sigmoid(Z2)
+        model_prediction = np.argmax(self.activations[-1], axis=0)
+        self.test_classes %= 10
+        eval = model_prediction - self.test_classes
+        prob = np.vectorize(lambda x: 0 if x == 0 else 1)
+
+        losses = np.sum(
+            prob(eval)
+        )
+        print(f'Test set accuracy: {np.round(100 - (losses / self.test_set_size) * 100, 4)} %')
+
+
+    def eval_on_training_set(self):
+        self.forward_propagation()
+        # prob = np.vectorize(lambda x: 1 if x >= 0.5 else 0)
+        # self.activations[-1] = prob(self.activations[-1])
+        model_prediction = np.argmax(self.activations[-1], axis=0)
+        self.train_classes %= 10
+        eval = model_prediction - self.train_classes
+        prob = np.vectorize(lambda x: 0 if x == 0 else 1)
+
+
+        losses = np.sum(
+            prob(eval)
+        )
+
+        print(f'Training set accuracy: {np.round(100 - (losses / self.training_set_size) * 100, 4)} %')
 
 
 SNN = StandardNeuralNetwoek('ex4data1.mat', [400, 25, 10], 0.)
