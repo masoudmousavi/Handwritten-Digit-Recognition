@@ -48,12 +48,12 @@ class StandardNeuralNetwoek(object):
         X = X[:, shuffler]
         ret_Y = ret_Y.T[:, shuffler]
         labeled_Y = labeled_Y.T[:, shuffler]
-        X_train = X[:, :4500]
-        X_test = X[:, 4500:]
-        Y_train = ret_Y[:, :4500]
-        Y_test = ret_Y[:, 4500:]
-        train_classes = labeled_Y[:, :4500]
-        test_classes = labeled_Y[:, 4500:]
+        X_train = X[:, :4000]
+        X_test = X[:, 4000:]
+        Y_train = ret_Y[:, :4000]
+        Y_test = ret_Y[:, 4000:]
+        train_classes = labeled_Y[:, :4000]
+        test_classes = labeled_Y[:, 4000:]
         return X_train, Y_train, X_test, Y_test, train_classes, test_classes
 
 
@@ -94,6 +94,8 @@ class StandardNeuralNetwoek(object):
         dZ1 = np.matmul(self.weights[1].T, dZ2) * tanh_prime(Z1)
         dW1 = np.matmul(dZ1, self.X.T) / self.training_set_size
         db1 = np.sum(dZ1, axis=1, keepdims=True)
+        dW1 += self.weights[0] * (self.regularization_param / self.training_set_size)
+        dW2 += self.weights[1] * (self.regularization_param / self.training_set_size)
         return db1, db2, dW1, dW2
 
 
@@ -103,12 +105,19 @@ class StandardNeuralNetwoek(object):
             (1 - self.Y) * np.log(1 - self.activations[-1])
         ))
         cost = -o_cost / self.training_set_size
-        if self._iterations % 10 == 0:
-            print(f'Epoch {self._iterations + 1}, Cost {cost}')
-            self.eval_on_test_set()
-            self.eval_on_training_set()
-            print('================================')
-        return -o_cost / self.training_set_size
+        cost2 = 0
+        for layer in range(2):
+            cost2 += np.sum(
+                self.weights[layer] ** 2
+            )
+        cost += (self.regularization_param * cost2) / (2 * self.training_set_size)
+        if self._iterations % 25 == 0:
+            print(f'Epoch {self._iterations} Stats:')
+            print(f'>>>>Cost: {np.round(cost, 7)}')
+            print(f'>>>>Training Set Accuracy: {self.eval_on_training_set()} %')
+            print(f'>>>>Test Set Accuracy: {self.eval_on_test_set()} %')
+            print('=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=')
+        return cost
 
 
     def gradient_descent(self):
@@ -128,11 +137,13 @@ class StandardNeuralNetwoek(object):
         SdW = [np.ones(self.weights[layer].shape) for layer in range(2)]
         Vdb = [np.ones(self.bias[layer].shape) for layer in range(2)]
         Sdb = [np.ones(self.bias[layer].shape) for layer in range(2)]
-        alpha = 0.3
+        alpha = 0.1
         beta1 = 0.9
         beta2 = 0.99
+        decay_rate = 0.9997
         epsilon = 0.00000001
         for epoch in range(1, 3000):
+            alpha *= decay_rate
             self._iterations += 1
             self.forward_propagation()
             db1, db2, dW1, dW2 = self.backpropagation()
@@ -153,14 +164,15 @@ class StandardNeuralNetwoek(object):
 
             cost = self.cost_function()
 
-            if epoch % 75 == 0 and epoch > 600:
+            if epoch % 100 == 0 and epoch > 600:
                 fig = plt.figure(figsize=(10, 7))
+
 
 
                 for _ in range(25):
                     fig.add_subplot(5, 5, _ + 1)
 
-                    index = np.random.randint(1, 4400)
+                    index = np.random.randint(1, 3999)
                     Z1 = np.matmul(self.weights[0], self.X[:, index].reshape(400, 1)) + self.bias[0]
                     self.activations[1] = np.tanh(Z1)
                     Z2 = np.matmul(self.weights[1], self.activations[1]) + self.bias[1]
@@ -187,6 +199,7 @@ class StandardNeuralNetwoek(object):
         losses = np.sum(
             prob(eval)
         )
+        return np.round(100 - (losses / self.test_set_size) * 100, 4)
         print(f'Test set accuracy: {np.round(100 - (losses / self.test_set_size) * 100, 4)} %')
 
 
@@ -203,10 +216,10 @@ class StandardNeuralNetwoek(object):
         losses = np.sum(
             prob(eval)
         )
-
+        return np.round(100 - (losses / self.training_set_size) * 100, 4)
         print(f'Training set accuracy: {np.round(100 - (losses / self.training_set_size) * 100, 4)} %')
 
 
-SNN = StandardNeuralNetwoek('ex4data1.mat', [400, 25, 10], 0.)
+SNN = StandardNeuralNetwoek('ex4data1.mat', [400, 25, 10], 1)
 # SNN.gradient_descent()
 SNN.adam()
